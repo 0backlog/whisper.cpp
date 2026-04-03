@@ -13,23 +13,20 @@ permissions:
 
 jobs:
   build-macos:
-    runs-on: macos-latest
     strategy:
       matrix:
-        arch: [arm64, x64]
+        include:
+          - arch: arm64
+            runner: macos-latest
+          - arch: x64
+            runner: macos-13
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Build whisper-server
         run: |
-          if [ "${{ matrix.arch }}" = "x64" ]; then
-            CMAKE_ARCH="x86_64"
-          else
-            CMAKE_ARCH="arm64"
-          fi
-
           cmake -B build \
-            -DCMAKE_OSX_ARCHITECTURES=$CMAKE_ARCH \
             -DWHISPER_BUILD_EXAMPLES=ON \
             -DWHISPER_BUILD_TESTS=OFF \
             -DCMAKE_BUILD_TYPE=Release
