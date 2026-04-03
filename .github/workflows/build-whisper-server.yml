@@ -1,0 +1,125 @@
+name: Build whisper-server
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g., v1.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [arm64, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build whisper-server
+        run: |
+          if [ "${{ matrix.arch }}" = "x64" ]; then
+            CMAKE_ARCH="x86_64"
+          else
+            CMAKE_ARCH="arm64"
+          fi
+
+          cmake -B build \
+            -DCMAKE_OSX_ARCHITECTURES=$CMAKE_ARCH \
+            -DWHISPER_BUILD_EXAMPLES=ON \
+            -DWHISPER_BUILD_TESTS=OFF \
+            -DCMAKE_BUILD_TYPE=Release
+
+          cmake --build build --config Release --target whisper-server -j$(sysctl -n hw.logicalcpu)
+
+      - name: Package
+        run: |
+          BINARY_NAME="whisper-server-darwin-${{ matrix.arch }}"
+          cp build/bin/whisper-server "$BINARY_NAME"
+          chmod +x "$BINARY_NAME"
+          zip "${BINARY_NAME}.zip" "$BINARY_NAME"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: whisper-server-darwin-${{ matrix.arch }}
+          path: whisper-server-darwin-${{ matrix.arch }}.zip
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build whisper-server
+        run: |
+          cmake -B build \
+            -DWHISPER_BUILD_EXAMPLES=ON \
+            -DWHISPER_BUILD_TESTS=OFF \
+            -DCMAKE_BUILD_TYPE=Release
+
+          cmake --build build --config Release --target whisper-server -j$(nproc)
+
+      - name: Package
+        run: |
+          BINARY_NAME="whisper-server-linux-x64-cpu"
+          cp build/bin/whisper-server "$BINARY_NAME"
+          chmod +x "$BINARY_NAME"
+          zip "${BINARY_NAME}.zip" "$BINARY_NAME"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: whisper-server-linux-x64
+          path: whisper-server-linux-x64-cpu.zip
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build whisper-server
+        run: |
+          cmake -B build -DWHISPER_BUILD_EXAMPLES=ON -DWHISPER_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --target whisper-server -j $env:NUMBER_OF_PROCESSORS
+
+      - name: Package
+        shell: bash
+        run: |
+          BINARY_NAME="whisper-server-win32-x64-cpu"
+          cp build/bin/Release/whisper-server.exe "${BINARY_NAME}.exe"
+          7z a "${BINARY_NAME}.zip" "${BINARY_NAME}.exe"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: whisper-server-win32-x64
+          path: whisper-server-win32-x64-cpu.zip
+
+  release:
+    needs: [build-macos, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ inputs.tag }}"
+
+          # Collect all zips
+          find artifacts -name '*.zip' -exec cp {} . \;
+
+          # Create release
+          gh release create "$TAG" \
+            --repo ${{ github.repository }} \
+            --title "whisper-server $TAG" \
+            --notes "Pre-built whisper-server binaries for 0backlog" \
+            *.zip
