@@ -19,17 +19,24 @@ jobs:
           - arch: arm64
             runner: macos-latest
           - arch: x64
-            runner: macos-13
+            runner: macos-latest
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Build whisper-server
         run: |
+          if [ "${{ matrix.arch }}" = "x64" ]; then
+            CMAKE_EXTRA="-DCMAKE_OSX_ARCHITECTURES=x86_64 -DGGML_NATIVE=OFF"
+          else
+            CMAKE_EXTRA=""
+          fi
+
           cmake -B build \
             -DWHISPER_BUILD_EXAMPLES=ON \
             -DWHISPER_BUILD_TESTS=OFF \
-            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_BUILD_TYPE=Release \
+            $CMAKE_EXTRA
 
           cmake --build build --config Release --target whisper-server -j$(sysctl -n hw.logicalcpu)
 
